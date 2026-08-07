@@ -117,7 +117,7 @@ class TicketService {
     for (const vendor of matchingVendors) {
       await bagachatService.sendTemplateMessage(
         vendor.mobile,
-        'vendor_assignment',
+        'state_vendor_alert1',
         templateParams,
         `New Complaint Assignment (${ticket.ticketNumber})`,
         ticket.ticketNumber
@@ -161,7 +161,7 @@ class TicketService {
 
     await bagachatService.sendTemplateMessage(
       vendor.mobile,
-      'vendor_assignment',
+      'state_vendor_alert1',
       templateParams,
       `New Complaint Assignment (${ticket.ticketNumber})`,
       ticket.ticketNumber
@@ -276,7 +276,7 @@ class TicketService {
       ];
       await bagachatService.sendTemplateMessage(
         nextVendor.mobile,
-        'vendor_assignment',
+        'state_vendor_alert1',
         templateParams,
         `New Complaint Assignment (${ticket.ticketNumber})`,
         ticket.ticketNumber

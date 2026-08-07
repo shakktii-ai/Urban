@@ -37,7 +37,7 @@ class BagAChatService {
    *     ]
    * }'
    */
-  async sendTemplateMessage(phone, templateName, paramsArray = [], defaultText = 'New Complaint', ticketNumber = '') {
+  async sendTemplateMessage(phone, templateName = 'state_vendor_alert1', paramsArray = [], defaultText = 'New Complaint', ticketNumber = '') {
     const conversationname = phone.startsWith('+') ? phone : `+${phone.replace(/[^0-9]/g, '')}`;
 
     const payload = {
