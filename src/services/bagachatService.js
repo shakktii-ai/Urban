@@ -5,6 +5,19 @@ const deliveryStatusRepository = require('../repositories/DeliveryStatusReposito
 
 class BagAChatService {
   /**
+   * Helper to format phone number to E.164 (+91XXXXXXXXXX)
+   * Automatically adds India country code 91 for 10-digit numbers
+   */
+  formatPhoneNumber(phone) {
+    if (!phone) return '';
+    let digits = String(phone).replace(/[^0-9]/g, '');
+    if (digits.length === 10) {
+      digits = `91${digits}`;
+    }
+    return digits.startsWith('+') ? digits : `+${digits}`;
+  }
+
+  /**
    * Helper to execute BagAChat API call with automatic Auth Fallback and explicit production logging
    */
   async postWithAuthFallback(url, payload) {
@@ -64,14 +77,14 @@ class BagAChatService {
    * API 1.1: Business Initiated Template Message
    */
   async sendTemplateMessage(phone, templateName = 'state_vendor_alert1', paramsArray = [], defaultText = 'New Complaint', ticketNumber = '') {
-    const conversationname = phone.startsWith('+') ? phone : `+${phone.replace(/[^0-9]/g, '')}`;
+    const conversationname = this.formatPhoneNumber(phone);
 
     const payload = {
       conversationname,
       message: defaultText,
       templatename: templateName,
       wanamespace: 'bagachat',
-      language: 'en_us',
+      language: 'en_US',
       params: paramsArray.map(p => (typeof p === 'object' ? p : { text: String(p) }))
     };
 
@@ -109,7 +122,7 @@ class BagAChatService {
    * API 1.2: Customer Care Session Message (24-Hour Window)
    */
   async sendSessionMessage(phone, messageText, ticketNumber = '') {
-    const conversationname = phone.startsWith('+') ? phone : `+${phone.replace(/[^0-9]/g, '')}`;
+    const conversationname = this.formatPhoneNumber(phone);
 
     const payload = {
       conversationname,
@@ -147,7 +160,7 @@ class BagAChatService {
    * API 4: Incoming Message Forwarding Parser
    */
   parseWebhookPayload(body) {
-    const phone = body?.phone || body?.sender || body?.conversationname?.replace(/[^0-9]/g, '') || '';
+    const rawPhone = body?.phone || body?.sender || body?.conversationname?.replace(/[^0-9]/g, '') || '';
     const countrycode = body?.countrycode || '91';
     const message = body?.message || body?.text || '';
     const mediaurl = body?.mediaurl || body?.image || '';
@@ -157,9 +170,11 @@ class BagAChatService {
     const repliedbacmsgid = body?.repliedbacmsgid || '';
     const time = body?.time ? new Date(body.time) : new Date();
 
+    const fullPhone = this.formatPhoneNumber(rawPhone);
+
     return {
-      phone,
-      fullPhone: phone.startsWith(countrycode) ? phone : `${countrycode}${phone}`,
+      phone: rawPhone,
+      fullPhone,
       countrycode,
       message: String(message).trim(),
       mediaurl,
