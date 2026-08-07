@@ -5,37 +5,54 @@ const deliveryStatusRepository = require('../repositories/DeliveryStatusReposito
 
 class BagAChatService {
   /**
-   * Header Authorization formatted strictly per BagAChat Official cURL:
-   * --header 'Authorization: Basic YOUR_BASE64_TOKEN'
+   * Helper to execute BagAChat API call with automatic Auth Fallback (Bearer / Basic / Plain / Body token)
    */
-  getAuthHeader() {
-    const token = bagachatConfig.BAGACHAT_BASIC_AUTH;
-    const authValue = token.startsWith('Basic ') || token.startsWith('Bearer ') ? token : `Basic ${token}`;
-    return {
-      'Authorization': authValue,
-      'Content-Type': 'application/json'
-    };
+  async postWithAuthFallback(url, payload) {
+    const rawToken = bagachatConfig.BAGACHAT_BASIC_AUTH || 'PUSHKARBOT';
+
+    // List of auth formats to try
+    const authHeaders = [
+      rawToken.startsWith('Bearer ') || rawToken.startsWith('Basic ') ? rawToken : `Bearer ${rawToken}`,
+      rawToken.startsWith('Basic ') || rawToken.startsWith('Bearer ') ? rawToken : `Basic ${rawToken}`,
+      rawToken
+    ];
+
+    let lastError = null;
+
+    for (const authHeader of authHeaders) {
+      try {
+        const response = await axios.post(url, payload, {
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
+        return response.data;
+      } catch (error) {
+        lastError = error;
+        // If 401 Unauthorized, try next auth header format
+        if (error.response && error.response.status === 401) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // Fallback: Try with token in body
+    try {
+      const response = await axios.post(url, { ...payload, token: rawToken, apitoken: rawToken }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000
+      });
+      return response.data;
+    } catch (err) {
+      throw lastError || err;
+    }
   }
 
   /**
    * API 1.1: Business Initiated Template Message
-   * cURL:
-   * curl --location 'https://push.bagachat.com/api/sendtransactionalmsg_waentapi.bg' \
-   * --header 'Authorization: Basic YOUR_BASE64_TOKEN' \
-   * --header 'Content-Type: application/json' \
-   * --data '{
-   *     "conversationname":"+919876543210",
-   *     "message":"New Complaint",
-   *     "templatename":"vendor_assignment",
-   *     "wanamespace":"bagachat",
-   *     "language":"en_us",
-   *     "params":[
-   *         {"text":"TKT-1001"},
-   *         {"text":"Ward 5"},
-   *         {"text":"Water Leakage"},
-   *         {"text":"Rahul"}
-   *     ]
-   * }'
    */
   async sendTemplateMessage(phone, templateName = 'state_vendor_alert1', paramsArray = [], defaultText = 'New Complaint', ticketNumber = '') {
     const conversationname = phone.startsWith('+') ? phone : `+${phone.replace(/[^0-9]/g, '')}`;
@@ -54,10 +71,7 @@ class BagAChatService {
     let status = 'SENT';
 
     try {
-      const response = await axios.post(bagachatConfig.BAGACHAT_TRANSACTIONAL_API, payload, {
-        headers: this.getAuthHeader()
-      });
-      responseData = response.data;
+      responseData = await this.postWithAuthFallback(bagachatConfig.BAGACHAT_TRANSACTIONAL_API, payload);
       if (responseData?.messageid) messageId = responseData.messageid;
     } catch (error) {
       console.error(`BagAChat API 1.1 Error (${phone}):`, error.response?.data || error.message);
@@ -83,14 +97,6 @@ class BagAChatService {
 
   /**
    * API 1.2: Customer Care Session Message (24-Hour Window)
-   * cURL:
-   * curl --location 'https://link.bagachat.com/api/sendcustomercaremsg_waentapi.bg' \
-   * --header 'Authorization: Basic YOUR_BASE64_TOKEN' \
-   * --header 'Content-Type: application/json' \
-   * --data '{
-   *    "conversationname":"+919876543210",
-   *    "message":"Your complaint is under process."
-   * }'
    */
   async sendSessionMessage(phone, messageText, ticketNumber = '') {
     const conversationname = phone.startsWith('+') ? phone : `+${phone.replace(/[^0-9]/g, '')}`;
@@ -105,10 +111,7 @@ class BagAChatService {
     let status = 'SENT';
 
     try {
-      const response = await axios.post(bagachatConfig.BAGACHAT_SESSION_API, payload, {
-        headers: this.getAuthHeader()
-      });
-      responseData = response.data;
+      responseData = await this.postWithAuthFallback(bagachatConfig.BAGACHAT_SESSION_API, payload);
       if (responseData?.messageid) messageId = responseData.messageid;
     } catch (error) {
       console.error(`BagAChat API 1.2 Error (${phone}):`, error.response?.data || error.message);
