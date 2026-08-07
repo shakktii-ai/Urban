@@ -72,11 +72,17 @@ class TicketService {
   }
 
   /**
-   * Feature 2: Send BagAChat API 1.1 Template Message to ALL matching available vendors simultaneously
+   * Feature 2: Send BagAChat API 1.1 Template Message to ALL matching available vendors simultaneously using Promise.all()
    */
   async broadcastTicketToAllVendors(ticketId) {
     const ticket = await ticketRepository.findById(ticketId);
-    if (!ticket) return;
+    if (!ticket) {
+      console.error(`❌ [TicketService] broadcastTicketToAllVendors failed: Ticket ${ticketId} not found.`);
+      return;
+    }
+
+    console.log(`📡 [TicketService] Starting multi-vendor broadcast for Ticket ${ticket.ticketNumber}...`);
+    console.log(`   Category: "${ticket.complaint.category}", Ward: "${ticket.wardName}", Area: "${ticket.areaName}"`);
 
     const matchingVendors = await vendorRepository.findAllAvailableVendors(
       ticket.complaint.category,
@@ -85,6 +91,7 @@ class TicketService {
     );
 
     if (!matchingVendors || matchingVendors.length === 0) {
+      console.error(`❌ No matching vendors found for Ticket ${ticket.ticketNumber}.`);
       ticket.status = TICKET_STATUS.NEW;
       await ticket.save();
 
@@ -96,6 +103,8 @@ class TicketService {
       });
       return;
     }
+
+    console.log(`📢 [TicketService] Broadcasting Ticket ${ticket.ticketNumber} to ${matchingVendors.length} matching vendors via BagAChat API 1.1...`);
 
     ticket.status = TICKET_STATUS.ASSIGNED;
     ticket.timeline.push({
@@ -113,20 +122,46 @@ class TicketService {
       ticket.citizen.name
     ];
 
-    // Dispatch BagAChat API 1.1 Template Message to EVERY matching vendor simultaneously
-    for (const vendor of matchingVendors) {
-      await bagachatService.sendTemplateMessage(
-        vendor.mobile,
-        'state_vendor_alert1',
-        templateParams,
-        `New Complaint Assignment (${ticket.ticketNumber})`,
-        ticket.ticketNumber
-      );
-    }
+    // Requirement 10: Dispatch BagAChat API 1.1 Template Message to ALL matching vendors in parallel using Promise.all()
+    const broadcastResults = await Promise.all(
+      matchingVendors.map(async (vendor) => {
+        const vendorMobile = vendor.mobile || vendor.phone;
+        if (!vendorMobile) {
+          console.error(`⚠️ [TicketService] Vendor ${vendor.name} has no valid mobile number.`);
+          return { vendorId: vendor._id, success: false };
+        }
+
+        console.log(`🚀 [TicketService] Dispatching API 1.1 Template Message to Vendor: ${vendor.name} (${vendorMobile})`);
+
+        const result = await bagachatService.sendTemplateMessage(
+          vendorMobile,
+          'state_vendor_alert1',
+          templateParams,
+          `New Complaint Assignment (${ticket.ticketNumber})`,
+          ticket.ticketNumber
+        );
+
+        // Requirement 9: Store ticketId, vendorId, messageId, status, sentAt in audit
+        await auditLogRepository.logAction('VENDOR_TEMPLATE_SENT', 'Tickets', `VENDOR_${vendorMobile}`, {
+          ticketId: ticket._id,
+          ticketNumber: ticket.ticketNumber,
+          vendorId: vendor._id,
+          vendorName: vendor.name,
+          messageId: result.messageId,
+          status: result.success ? 'SENT' : 'FAILED',
+          sentAt: new Date()
+        });
+
+        return { vendorId: vendor._id, vendorName: vendor.name, ...result };
+      })
+    );
+
+    console.log(`✅ [TicketService] Broadcast complete for Ticket ${ticket.ticketNumber}. Results:`, broadcastResults);
 
     await auditLogRepository.logAction('MULTI_VENDOR_BROADCAST', 'Tickets', 'SYSTEM', {
       ticketNumber: ticket.ticketNumber,
-      vendorCount: matchingVendors.length
+      vendorCount: matchingVendors.length,
+      broadcastResults
     });
   }
 

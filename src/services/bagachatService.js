@@ -5,12 +5,11 @@ const deliveryStatusRepository = require('../repositories/DeliveryStatusReposito
 
 class BagAChatService {
   /**
-   * Helper to execute BagAChat API call with automatic Auth Fallback (Bearer / Basic / Plain / Body token)
+   * Helper to execute BagAChat API call with automatic Auth Fallback and explicit production logging
    */
   async postWithAuthFallback(url, payload) {
     const rawToken = bagachatConfig.BAGACHAT_BASIC_AUTH || 'PUSHKARBOT';
 
-    // List of auth formats to try
     const authHeaders = [
       rawToken.startsWith('Bearer ') || rawToken.startsWith('Basic ') ? rawToken : `Bearer ${rawToken}`,
       rawToken.startsWith('Basic ') || rawToken.startsWith('Bearer ') ? rawToken : `Basic ${rawToken}`,
@@ -19,8 +18,12 @@ class BagAChatService {
 
     let lastError = null;
 
+    console.log(`📡 [BagAChat API Outbound] URL: ${url}`);
+    console.log(`📦 [BagAChat API Outbound] Payload:`, JSON.stringify(payload, null, 2));
+
     for (const authHeader of authHeaders) {
       try {
+        console.log(`🔑 [BagAChat API Outbound] Trying Authorization Header: "${authHeader}"`);
         const response = await axios.post(url, payload, {
           headers: {
             'Authorization': authHeader,
@@ -28,10 +31,13 @@ class BagAChatService {
           },
           timeout: 10000
         });
+
+        console.log(`✅ [BagAChat API Outbound] Success! Status Code: ${response.status}`);
+        console.log(`📄 [BagAChat API Outbound] Response Body:`, JSON.stringify(response.data));
         return response.data;
       } catch (error) {
         lastError = error;
-        // If 401 Unauthorized, try next auth header format
+        console.error(`⚠️ [BagAChat API Outbound] Attempt Failed. Status Code: ${error.response?.status || 'NETWORK_ERR'}, Body:`, error.response?.data || error.message);
         if (error.response && error.response.status === 401) {
           continue;
         }
@@ -41,12 +47,15 @@ class BagAChatService {
 
     // Fallback: Try with token in body
     try {
+      console.log(`🔑 [BagAChat API Outbound] Trying Body Token Fallback...`);
       const response = await axios.post(url, { ...payload, token: rawToken, apitoken: rawToken }, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 10000
       });
+      console.log(`✅ [BagAChat API Outbound] Body Fallback Success! Status Code: ${response.status}`);
       return response.data;
     } catch (err) {
+      console.error(`❌ [BagAChat API Outbound] All Authentication Attempts Failed! Final Error:`, err.response?.data || err.message);
       throw lastError || err;
     }
   }
@@ -74,8 +83,9 @@ class BagAChatService {
       responseData = await this.postWithAuthFallback(bagachatConfig.BAGACHAT_TRANSACTIONAL_API, payload);
       if (responseData?.messageid) messageId = responseData.messageid;
     } catch (error) {
-      console.error(`BagAChat API 1.1 Error (${phone}):`, error.response?.data || error.message);
-      responseData = { success: true, mock: true, error: error.message };
+      console.error(`❌ BagAChat API 1.1 Error (${phone}):`, error.response?.data || error.message);
+      responseData = { success: false, error: error.message, details: error.response?.data };
+      status = 'FAILED';
     }
 
     // Record outbound message in repository
@@ -92,7 +102,7 @@ class BagAChatService {
 
     await deliveryStatusRepository.updateDeliveryStatus(messageId, status, '', conversationname);
 
-    return { success: true, messageId, data: responseData };
+    return { success: status === 'SENT', messageId, data: responseData };
   }
 
   /**
@@ -114,8 +124,9 @@ class BagAChatService {
       responseData = await this.postWithAuthFallback(bagachatConfig.BAGACHAT_SESSION_API, payload);
       if (responseData?.messageid) messageId = responseData.messageid;
     } catch (error) {
-      console.error(`BagAChat API 1.2 Error (${phone}):`, error.response?.data || error.message);
-      responseData = { success: true, mock: true, error: error.message };
+      console.error(`❌ BagAChat API 1.2 Error (${phone}):`, error.response?.data || error.message);
+      responseData = { success: false, error: error.message, details: error.response?.data };
+      status = 'FAILED';
     }
 
     // Record outbound message in repository
@@ -129,7 +140,7 @@ class BagAChatService {
       timestamp: new Date()
     });
 
-    return { success: true, messageId, data: responseData };
+    return { success: status === 'SENT', messageId, data: responseData };
   }
 
   /**
