@@ -1,6 +1,6 @@
 module.exports = {
   // Official BagAChat Basic Authorization Token
-  BAGACHAT_BASIC_AUTH: process.env.BAGACHAT_BASIC_AUTH || 'PRJK22051611BHI2',
+  BAGACHAT_BASIC_AUTH: process.env.BAGACHAT_BASIC_AUTH || 'PUSHKARBOT',
 
   // Official API 1.1 Endpoint (Business Initiated Template Messages)
   BAGACHAT_TRANSACTIONAL_API: process.env.BAGACHAT_TRANSACTIONAL_API || 'https://push.bagachat.com/api/sendtransactionalmsg_waentapi.bg',

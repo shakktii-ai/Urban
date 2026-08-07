@@ -138,7 +138,9 @@ class BagAChatService {
     const message = body?.message || body?.text || '';
     const mediaurl = body?.mediaurl || body?.image || '';
     const mediatype = body?.mediatype || (mediaurl ? 'image' : 'text');
-    const conversation = body?.conversation || body?.messageid || `CONV_${Date.now()}`;
+    const conversation = body?.conversation || body?.bacmsgid || body?.messageid || `CONV_${Date.now()}`;
+    const bacmsgid = body?.bacmsgid || body?.messageid || '';
+    const repliedbacmsgid = body?.repliedbacmsgid || '';
     const time = body?.time ? new Date(body.time) : new Date();
 
     return {
@@ -149,6 +151,8 @@ class BagAChatService {
       mediaurl,
       mediatype,
       conversation,
+      bacmsgid,
+      repliedbacmsgid,
       time
     };
   }
