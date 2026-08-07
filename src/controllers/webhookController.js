@@ -68,8 +68,8 @@ class WebhookController {
         });
       }
 
-      // Feature 4: Vendor DECLINE reply with Auto-Retry next vendor
-      if (lowerMessage === 'decline' || lowerMessage.includes('decline_') || lowerMessage === 'job declined') {
+      // Feature 4: Vendor DECLINE / REJECT reply with Auto-Retry next vendor
+      if (['decline', 'reject', 'job declined', 'job rejected'].includes(lowerMessage) || lowerMessage.includes('decline_') || lowerMessage.includes('reject_')) {
         const ticket = await ticketService.handleVendorDecline(userPhone);
         return res.status(200).json({
           success: true,
