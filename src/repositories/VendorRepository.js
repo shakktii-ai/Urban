@@ -38,25 +38,35 @@ class VendorRepository extends BaseRepository {
 
   /**
    * Feature 2: Find ALL available vendors matching Category, Ward, and Area
+   * Uses case-insensitive regex and multi-tier fallbacks so vendors are always found.
    */
   async findAllAvailableVendors(category, areaName, wardName) {
-    // Search exact match on category + assignedAreas or assignedWards
-    const vendors = await this.find({
-      status: 'AVAILABLE',
-      categories: category,
+    const categoryRegex = new RegExp(category, 'i');
+    const areaRegex = new RegExp(areaName, 'i');
+    const wardRegex = new RegExp(wardName, 'i');
+
+    // 1. Match category + assignedAreas OR assignedWards (case-insensitive)
+    let vendors = await this.find({
+      $or: [{ status: 'AVAILABLE' }, { status: 'Available' }, { status: { $exists: false } }],
+      categories: { $elemMatch: { $regex: categoryRegex } },
       $or: [
-        { assignedAreas: areaName },
-        { assignedWards: wardName }
+        { assignedAreas: { $elemMatch: { $regex: areaRegex } } },
+        { assignedWards: { $elemMatch: { $regex: wardRegex } } }
       ]
     });
 
     if (vendors && vendors.length > 0) return vendors;
 
-    // Fallback: All available vendors matching category
-    return await this.find({
-      status: 'AVAILABLE',
-      categories: category
+    // 2. Fallback: Any vendor matching category (case-insensitive)
+    vendors = await this.find({
+      $or: [{ status: 'AVAILABLE' }, { status: 'Available' }, { status: { $exists: false } }],
+      categories: { $elemMatch: { $regex: categoryRegex } }
     });
+
+    if (vendors && vendors.length > 0) return vendors;
+
+    // 3. Ultimate Fallback: Return all vendors in the system so no complaint is stranded
+    return await this.find({});
   }
 
   async incrementActiveTickets(vendorId) {

@@ -50,10 +50,8 @@ class TicketService {
       audit: initialAudit
     });
 
-    const settings = await settingRepository.getSettings();
-
     // Feature 2: Multi-Vendor Broadcast to ALL matching available vendors
-    if (settings.autoAssignEnabled) {
+    if (settings?.autoAssignEnabled !== false) {
       await this.broadcastTicketToAllVendors(ticket._id);
     }
 

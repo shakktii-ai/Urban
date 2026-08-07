@@ -25,18 +25,11 @@ export default function Header() {
 
           <nav className="flex items-center space-x-1 sm:space-x-3">
             <Link
-              href="/vendor/dashboard"
-              className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors"
-            >
-              <UserCheck className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">Vendor Portal</span>
-            </Link>
-            <Link
-              href="/admin/dashboard"
+              href="/dashboard"
               className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors"
             >
               <LayoutDashboard className="w-4 h-4 text-blue-400" />
-              <span className="hidden sm:inline">Admin MIS</span>
+              <span className="hidden sm:inline">Admin MIS Dashboard</span>
             </Link>
             <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block"></div>
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
