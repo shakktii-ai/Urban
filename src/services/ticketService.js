@@ -33,7 +33,7 @@ class TicketService {
       timestamp: new Date()
     }];
 
-    // Create ticket record via Repository
+    // Step 3: Create ticket record via Repository
     const ticket = await ticketRepository.create({
       ticketNumber,
       citizen: { name: name || 'Citizen', phone },
@@ -52,7 +52,7 @@ class TicketService {
 
     const settings = await settingRepository.getSettings();
 
-    // Feature 2: Multi-Vendor Broadcast to ALL matching available vendors
+    // Step 4 & 6: Automatically trigger multi-vendor broadcast after ticket creation
     if (settings?.autoAssignEnabled !== false) {
       await this.broadcastTicketToAllVendors(ticket._id);
     }
@@ -72,7 +72,7 @@ class TicketService {
   }
 
   /**
-   * Feature 2: Send BagAChat API 1.1 Template Message to ALL matching available vendors simultaneously using Promise.all()
+   * Step 5 & 6: Send BagAChat API 1.1 Template Message to ALL matching available vendors simultaneously using Promise.all()
    */
   async broadcastTicketToAllVendors(ticketId) {
     const ticket = await ticketRepository.findById(ticketId);
@@ -84,14 +84,16 @@ class TicketService {
     console.log(`📡 [TicketService] Starting multi-vendor broadcast for Ticket ${ticket.ticketNumber}...`);
     console.log(`   Category: "${ticket.complaint.category}", Ward: "${ticket.wardName}", Area: "${ticket.areaName}"`);
 
-    const matchingVendors = await vendorRepository.findAllAvailableVendors(
+    // Step 5: Execute autoAssignService.findMatchingVendors using VendorRepository.find()
+    const matchingVendors = await autoAssignService.findMatchingVendors(
       ticket.complaint.category,
       ticket.areaName,
       ticket.wardName
     );
 
+    // Step 12: If NO vendor exists -> Keep status UNASSIGNED/NEW and generate Dashboard Alert
     if (!matchingVendors || matchingVendors.length === 0) {
-      console.error(`❌ No matching vendors found for Ticket ${ticket.ticketNumber}.`);
+      console.error(`❌ No matching vendors found for Ward ${ticket.wardName} / Area ${ticket.areaName}.`);
       ticket.status = TICKET_STATUS.NEW;
       await ticket.save();
 
@@ -99,12 +101,14 @@ class TicketService {
         ticketNumber: ticket.ticketNumber,
         category: ticket.complaint.category,
         wardName: ticket.wardName,
+        areaName: ticket.areaName,
+        alertMessage: `No vendor available for Ward ${ticket.wardName} / Area ${ticket.areaName}`,
         timestamp: new Date()
       });
       return;
     }
 
-    console.log(`📢 [TicketService] Broadcasting Ticket ${ticket.ticketNumber} to ${matchingVendors.length} matching vendors via BagAChat API 1.1...`);
+    console.log(`📢 [TicketService] Broadcasting Ticket ${ticket.ticketNumber} to ALL ${matchingVendors.length} matching vendors via BagAChat API 1.1...`);
 
     ticket.status = TICKET_STATUS.ASSIGNED;
     ticket.timeline.push({
@@ -122,7 +126,7 @@ class TicketService {
       ticket.citizen.name
     ];
 
-    // Requirement 10: Dispatch BagAChat API 1.1 Template Message to ALL matching vendors in parallel using Promise.all()
+    // Step 6: Dispatch BagAChat API 1.1 Template Message to EVERY matching vendor simultaneously using Promise.all()
     const broadcastResults = await Promise.all(
       matchingVendors.map(async (vendor) => {
         const vendorMobile = vendor.mobile || vendor.phone;
@@ -138,25 +142,33 @@ class TicketService {
           'state_vendor_alert1',
           templateParams,
           `New Complaint Assignment (${ticket.ticketNumber})`,
-          ticket.ticketNumber
+          ticket.ticketNumber,
+          {
+            ticketId: ticket._id,
+            ticketNumber: ticket.ticketNumber,
+            vendorId: vendor._id,
+            vendorName: vendor.name,
+            citizenName: ticket.citizen.name,
+            citizenId: ticket.citizen.phone
+          }
         );
 
-        // Requirement 9: Store ticketId, vendorId, messageId, status, sentAt in audit
+        // Step 7: Store broadcast information in MongoDB
         await auditLogRepository.logAction('VENDOR_TEMPLATE_SENT', 'Tickets', `VENDOR_${vendorMobile}`, {
           ticketId: ticket._id,
           ticketNumber: ticket.ticketNumber,
           vendorId: vendor._id,
           vendorName: vendor.name,
           messageId: result.messageId,
-          status: result.success ? 'SENT' : 'FAILED',
-          sentAt: new Date()
+          status: result.success ? 'PENDING' : 'FAILED',
+          broadcastTime: new Date()
         });
 
         return { vendorId: vendor._id, vendorName: vendor.name, ...result };
       })
     );
 
-    console.log(`✅ [TicketService] Broadcast complete for Ticket ${ticket.ticketNumber}. Results:`, broadcastResults);
+    console.log(`✅ [TicketService] Multi-Vendor Broadcast complete for Ticket ${ticket.ticketNumber}. Results:`, broadcastResults);
 
     await auditLogRepository.logAction('MULTI_VENDOR_BROADCAST', 'Tickets', 'SYSTEM', {
       ticketNumber: ticket.ticketNumber,
@@ -195,18 +207,26 @@ class TicketService {
     ];
 
     await bagachatService.sendTemplateMessage(
-      vendor.mobile,
+      vendor.mobile || vendor.phone,
       'state_vendor_alert1',
       templateParams,
       `New Complaint Assignment (${ticket.ticketNumber})`,
-      ticket.ticketNumber
+      ticket.ticketNumber,
+      {
+        ticketId: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        vendorId: vendor._id,
+        vendorName: vendor.name,
+        citizenName: ticket.citizen.name,
+        citizenId: ticket.citizen.phone
+      }
     );
 
     return ticket;
   }
 
   /**
-   * Feature 3: First Vendor Accept Atomic Lock & Rejection of Late Accepts
+   * Step 8 & 10: First Vendor Accept Atomic Lock & Rejection of Late Accepts
    */
   async handleVendorAccept(vendorMobile, ticketNumber = '') {
     const vendor = await vendorRepository.findByMobile(vendorMobile);
@@ -224,15 +244,21 @@ class TicketService {
 
     if (!ticket) return null;
 
-    // Feature 3: Atomic Lock Attempt
+    // Step 8: Atomic Lock Attempt for FIRST Vendor to Accept
     const updatedTicket = await ticketRepository.atomicAcceptTicket(ticket._id, vendor._id, vendor.name);
 
-    // If atomic lock failed (another vendor already accepted first)
+    // Step 10: If atomic lock failed (another vendor accepted first), send API 1.2 Session Care Message to Vendor B
     if (!updatedTicket) {
       await bagachatService.sendSessionMessage(
         vendorMobile,
         `This complaint (${ticket.ticketNumber}) has already been accepted by another vendor. Thank you!`,
-        ticket.ticketNumber
+        ticket.ticketNumber,
+        {
+          ticketId: ticket._id,
+          ticketNumber: ticket.ticketNumber,
+          vendorId: vendor._id,
+          vendorName: vendor.name
+        }
       );
       return null;
     }
@@ -242,10 +268,22 @@ class TicketService {
     // Step 9: Send WhatsApp 24-hr session message (BagAChat API 1.2) to Citizen
     const citizenNotice = `Your complaint ${ticket.ticketNumber} has been accepted.\n` +
       `Vendor: ${vendor.name}\n` +
-      `Mobile: ${vendor.mobile}\n` +
+      `Mobile: ${vendor.mobile || vendor.phone}\n` +
       `Expected Visit: Within 1 Hour.`;
 
-    await bagachatService.sendSessionMessage(ticket.citizen.phone, citizenNotice, ticket.ticketNumber);
+    await bagachatService.sendSessionMessage(
+      ticket.citizen.phone,
+      citizenNotice,
+      ticket.ticketNumber,
+      {
+        ticketId: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        citizenName: ticket.citizen.name,
+        citizenId: ticket.citizen.phone,
+        vendorId: vendor._id,
+        vendorName: vendor.name
+      }
+    );
 
     await auditLogRepository.logAction('VENDOR_ACCEPTED', 'Tickets', `VENDOR_${vendor.mobile}`, { ticketNumber: ticket.ticketNumber });
 
@@ -259,7 +297,7 @@ class TicketService {
   }
 
   /**
-   * Feature 4: Automatic Vendor Retry on Decline
+   * Step 11: If Vendor declines -> Automatically send to NEXT available vendor
    */
   async handleVendorDecline(vendorMobile, ticketNumber = '') {
     const vendor = await vendorRepository.findByMobile(vendorMobile);
@@ -279,7 +317,7 @@ class TicketService {
     ticket.timeline.push({
       status: TICKET_STATUS.DECLINED,
       updatedBy: `VENDOR_${vendor?.name || 'WHATSAPP'}`,
-      remarks: `Vendor ${vendor?.name || ''} declined assignment. Triggering auto retry loop.`,
+      remarks: `Vendor ${vendor?.name || ''} declined assignment. Auto-retrying next vendor.`,
       timestamp: new Date()
     });
 
@@ -293,14 +331,14 @@ class TicketService {
       timestamp: new Date()
     });
 
-    // Feature 4: Auto Retry next available vendor
-    const remainingVendors = await vendorRepository.findAllAvailableVendors(
+    // Step 11: Automatically retry next available vendor
+    const remainingVendors = await autoAssignService.findMatchingVendors(
       ticket.complaint.category,
       ticket.areaName,
       ticket.wardName
     );
 
-    const nextVendor = remainingVendors.find(v => v.mobile !== vendorMobile);
+    const nextVendor = remainingVendors.find(v => (v.mobile || v.phone) !== vendorMobile);
 
     if (nextVendor) {
       const templateParams = [
@@ -310,11 +348,19 @@ class TicketService {
         ticket.citizen.name
       ];
       await bagachatService.sendTemplateMessage(
-        nextVendor.mobile,
+        nextVendor.mobile || nextVendor.phone,
         'state_vendor_alert1',
         templateParams,
         `New Complaint Assignment (${ticket.ticketNumber})`,
-        ticket.ticketNumber
+        ticket.ticketNumber,
+        {
+          ticketId: ticket._id,
+          ticketNumber: ticket.ticketNumber,
+          vendorId: nextVendor._id,
+          vendorName: nextVendor.name,
+          citizenName: ticket.citizen.name,
+          citizenId: ticket.citizen.phone
+        }
       );
     } else {
       ticket.status = TICKET_STATUS.NEW;
@@ -324,6 +370,8 @@ class TicketService {
         ticketNumber: ticket.ticketNumber,
         category: ticket.complaint.category,
         wardName: ticket.wardName,
+        areaName: ticket.areaName,
+        alertMessage: `No remaining vendor available for Ward ${ticket.wardName} / Area ${ticket.areaName}`,
         timestamp: new Date()
       });
     }
@@ -366,7 +414,17 @@ class TicketService {
     }
 
     const citizenNotice = `Your complaint ${ticket.ticketNumber} has been resolved.\nThank You!`;
-    await bagachatService.sendSessionMessage(ticket.citizen.phone, citizenNotice, ticket.ticketNumber);
+    await bagachatService.sendSessionMessage(
+      ticket.citizen.phone,
+      citizenNotice,
+      ticket.ticketNumber,
+      {
+        ticketId: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        citizenName: ticket.citizen.name,
+        citizenId: ticket.citizen.phone
+      }
+    );
 
     await auditLogRepository.logAction('TICKET_COMPLETED', 'Tickets', `VENDOR_${vendor?.mobile}`, { ticketNumber: ticket.ticketNumber });
 

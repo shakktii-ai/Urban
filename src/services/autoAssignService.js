@@ -68,10 +68,15 @@ class AutoAssignService {
   }
 
   /**
-   * Find matching vendor automatically
+   * Find ALL matching available vendors for ticket
    */
+  async findMatchingVendors(category, areaName, wardName) {
+    return await vendorRepository.findAllAvailableVendors(category, areaName, wardName);
+  }
+
   async findSuitableVendor(category, areaName, wardName) {
-    return await vendorRepository.findAvailableVendorForTicket(category, areaName, wardName);
+    const vendors = await this.findMatchingVendors(category, areaName, wardName);
+    return vendors && vendors.length > 0 ? vendors[0] : null;
   }
 }
 
