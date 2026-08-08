@@ -190,8 +190,8 @@ class BagAChatService {
 
   /**
    * STEP 2: BagAChat API 2 Delivery Status Check
-   * Template (API 1.1): POST https://push.bagachat.com/api/gettransactionalmsgstatus.bg
-   * Session (API 1.2):  POST https://link.bagachat.com/api/gettransactionalmsgstatus.bg
+   * Supports Format A ({ messagestatus: "PENDING", status: "SUCCESS" })
+   * AND Format B ({ note: "Provided Message Status", status: "WAAPIERRCODE_131042" })
    */
   async getMessageStatus(messageId, messageType = 'TEMPLATE') {
     const targetUrl = messageType === 'SESSION'
@@ -204,20 +204,51 @@ class BagAChatService {
 
     try {
       const responseData = await this.postWithAuthFallback(targetUrl, payload);
-      // Response format: { message: "Provided Message Status", messagestatus: "PENDING"|"DELIVERED"|"READ"|"FAILED", status: "SUCCESS" }
-      const messagestatus = responseData?.messagestatus || responseData?.status || 'UNKNOWN';
+      const { META_WHATSAPP_ERROR_MAP } = require('../config/constants');
+
+      const statusField = String(responseData?.status || responseData?.messagestatus || '').trim();
+      const noteField = responseData?.note || responseData?.message || '';
+
+      // Format B: Meta WhatsApp Error Code (WAAPIERRCODE_XXXXXX)
+      if (statusField.startsWith('WAAPIERRCODE_') || statusField.includes('ERR')) {
+        const rawCode = statusField.replace('WAAPIERRCODE_', '');
+        const mappedError = META_WHATSAPP_ERROR_MAP[rawCode];
+
+        const errorCode = statusField;
+        const errorMessage = mappedError ? mappedError.description : `Meta WhatsApp API Error ${rawCode}`;
+        const resolution = mappedError ? mappedError.resolution : '';
+        const fullReason = `${mappedError?.title || 'Meta WhatsApp Error'} (${rawCode}): ${errorMessage} ${resolution ? 'Action Needed: ' + resolution : ''}`;
+
+        return {
+          success: true,
+          messageStatus: 'FAILED',
+          errorCode,
+          errorMessage: fullReason,
+          reason: fullReason,
+          rawResponse: responseData
+        };
+      }
+
+      // Format A: Standard Delivery Status
+      const rawStatus = (responseData?.messagestatus || responseData?.status || 'UNKNOWN').toUpperCase();
+      const isFailed = rawStatus.includes('FAIL') || rawStatus.includes('ERR');
+      const messageStatus = isFailed ? 'FAILED' : (rawStatus === 'SUCCESS' ? 'PENDING' : rawStatus);
 
       return {
         success: true,
-        messageStatus: messagestatus.toUpperCase(),
-        reason: responseData?.message || '',
+        messageStatus,
+        errorCode: isFailed ? rawStatus : '',
+        errorMessage: noteField,
+        reason: noteField || `BagAChat Status: ${messageStatus}`,
         rawResponse: responseData
       };
     } catch (error) {
       console.error(`❌ [BagAChat API 2 Error] MessageId (${messageId}):`, error.response?.data || error.message);
       return {
         success: false,
-        messageStatus: 'UNKNOWN',
+        messageStatus: 'FAILED',
+        errorCode: 'HTTP_ERROR',
+        errorMessage: error.message,
         reason: error.message,
         rawResponse: error.response?.data || { error: error.message }
       };

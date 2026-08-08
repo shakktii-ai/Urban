@@ -24,7 +24,9 @@ export default async function handler(req, res) {
             msg.messageId,
             statusResult.messageStatus,
             statusResult.reason,
-            statusResult.rawResponse
+            statusResult.rawResponse,
+            statusResult.errorCode,
+            statusResult.errorMessage
           );
 
           if (statusChanged) {

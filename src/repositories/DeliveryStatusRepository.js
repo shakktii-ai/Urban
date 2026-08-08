@@ -33,7 +33,7 @@ class DeliveryStatusRepository extends BaseRepository {
     });
   }
 
-  async updateApi2Status(messageId, newStatus, reason = '', rawResponse = {}) {
+  async updateApi2Status(messageId, newStatus, reason = '', rawResponse = {}, errorCode = '', errorMessage = '') {
     const existing = await this.findOne({ messageId });
     if (!existing) return null;
 
@@ -47,6 +47,8 @@ class DeliveryStatusRepository extends BaseRepository {
     const updatePayload = {
       status: newStatus,
       reason: reason || existing.reason,
+      errorCode: errorCode || existing.errorCode,
+      errorMessage: errorMessage || existing.errorMessage,
       rawResponse,
       checkedAt: new Date(),
       $push: { statusHistory: historyUpdate }

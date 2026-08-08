@@ -57,6 +57,14 @@ const DeliveryStatusSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  errorCode: {
+    type: String,
+    default: ''
+  },
+  errorMessage: {
+    type: String,
+    default: ''
+  },
   retryCount: {
     type: Number,
     default: 0

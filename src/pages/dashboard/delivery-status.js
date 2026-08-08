@@ -14,7 +14,9 @@ import {
   CheckCheck,
   MessageSquare,
   ShieldCheck,
-  FileCode
+  FileCode,
+  AlertTriangle,
+  HelpCircle
 } from 'lucide-react';
 
 export default function WhatsAppDeliveryStatusPage() {
@@ -56,7 +58,6 @@ export default function WhatsAppDeliveryStatusPage() {
     }
   }, [search, statusFilter, typeFilter]);
 
-  // Initial load and 30-second auto-refresh
   useEffect(() => {
     fetchDeliveryData();
     const interval = setInterval(() => {
@@ -65,7 +66,6 @@ export default function WhatsAppDeliveryStatusPage() {
     return () => clearInterval(interval);
   }, [fetchDeliveryData]);
 
-  // Trigger BagAChat API 2 check for messages older than 1 minute
   const handleCheckPendingApi2 = async () => {
     setCheckingPending(true);
     try {
@@ -84,7 +84,6 @@ export default function WhatsAppDeliveryStatusPage() {
     }
   };
 
-  // Check single message API 2 status
   const handleCheckSingleMessage = async (messageId) => {
     setCheckingSingle(messageId);
     try {
@@ -107,21 +106,29 @@ export default function WhatsAppDeliveryStatusPage() {
     }
   };
 
-  const getStatusBadge = (status) => {
-    switch (status?.toUpperCase()) {
-      case 'PENDING':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400">PENDING</span>;
-      case 'SENT':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 border border-blue-500/20 text-blue-400">SENT</span>;
-      case 'DELIVERED':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">DELIVERED</span>;
-      case 'READ':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400">READ</span>;
-      case 'FAILED':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/10 border border-rose-500/20 text-rose-400">FAILED</span>;
-      default:
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400">UNKNOWN</span>;
+  const getStatusBadge = (status, errorCode) => {
+    const s = String(status || '').toUpperCase();
+    if (s === 'PENDING') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400">PENDING</span>;
     }
+    if (s === 'SENT') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 border border-blue-500/20 text-blue-400">SENT</span>;
+    }
+    if (s === 'DELIVERED') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">DELIVERED</span>;
+    }
+    if (s === 'READ') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400">READ</span>;
+    }
+    if (s === 'FAILED' || errorCode) {
+      return (
+        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/10 border border-rose-500/20 text-rose-400">
+          <AlertCircle className="w-3 h-3" />
+          <span>FAILED</span>
+        </span>
+      );
+    }
+    return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400">FAILED</span>;
   };
 
   return (
@@ -137,7 +144,7 @@ export default function WhatsAppDeliveryStatusPage() {
               <div>
                 <h1 className="text-2xl font-extrabold text-white">WhatsApp Delivery Status</h1>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Automated tracking of WhatsApp Template (API 1.1) & Session (API 1.2) delivery statuses via BagAChat API 2.
+                  Automated tracking of BagAChat API 2 delivery status & Meta WhatsApp Cloud API Error Codes (`WAAPIERRCODE_XXXXXX`).
                 </p>
               </div>
             </div>
@@ -234,7 +241,7 @@ export default function WhatsAppDeliveryStatusPage() {
           </div>
         </div>
 
-        {/* Messages Table */}
+        {/* Messages Table with Error Details Column */}
         <div className="glass-card rounded-2xl overflow-hidden border border-slate-800">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
@@ -244,19 +251,18 @@ export default function WhatsAppDeliveryStatusPage() {
                   <th className="p-4">Recipient / Vendor</th>
                   <th className="p-4">Mobile Number</th>
                   <th className="p-4">Message Type</th>
-                  <th className="p-4">API Used</th>
                   <th className="p-4">Message ID</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4 text-rose-400 font-bold">Error Details & Meta Code</th>
                   <th className="p-4">Remarks / Reason</th>
                   <th className="p-4">Sent Time</th>
-                  <th className="p-4">Checked Time</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {messages.length === 0 ? (
                   <tr>
-                    <td colSpan="11" className="p-8 text-center text-slate-400">
+                    <td colSpan="10" className="p-8 text-center text-slate-400">
                       No delivery status records found matching your filters.
                     </td>
                   </tr>
@@ -279,23 +285,31 @@ export default function WhatsAppDeliveryStatusPage() {
                           {m.messageType || 'TEMPLATE'}
                         </span>
                       </td>
-                      <td className="p-4 text-slate-400 font-mono text-[11px]">
-                        {m.apiUsed || 'API 1.1'}
-                      </td>
                       <td className="p-4 font-mono text-[11px] text-slate-400 max-w-[120px] truncate" title={m.messageId}>
                         {m.messageId}
                       </td>
                       <td className="p-4 whitespace-nowrap">
-                        {getStatusBadge(m.status)}
+                        {getStatusBadge(m.status, m.errorCode)}
+                      </td>
+                      <td className="p-4 max-w-xs">
+                        {m.errorCode ? (
+                          <div className="space-y-0.5">
+                            <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/30 inline-block">
+                              {m.errorCode}
+                            </span>
+                            <p className="text-[11px] text-rose-400 line-clamp-2 leading-tight">
+                              {m.errorMessage || m.reason}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 text-[11px]">None (Success)</span>
+                        )}
                       </td>
                       <td className="p-4 max-w-xs truncate text-slate-400">
                         {m.reason || 'Normal delivery process'}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-400 text-[11px]">
                         {m.createdAt ? new Date(m.createdAt).toLocaleString() : 'N/A'}
-                      </td>
-                      <td className="p-4 whitespace-nowrap text-slate-400 text-[11px]">
-                        {m.checkedAt ? new Date(m.checkedAt).toLocaleString() : 'Not Checked Yet'}
                       </td>
                       <td className="p-4 text-right space-x-2 whitespace-nowrap">
                         <button
@@ -323,7 +337,7 @@ export default function WhatsAppDeliveryStatusPage() {
           </div>
         </div>
 
-        {/* DETAILS MODAL */}
+        {/* DETAILS MODAL WITH META ERROR CODE INFORMATION */}
         {selectedMessage && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
             <div className="glass-card max-w-3xl w-full p-6 rounded-2xl space-y-5 border-slate-700 my-8">
@@ -333,7 +347,7 @@ export default function WhatsAppDeliveryStatusPage() {
                     <FileCode className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Delivery Status Details</h3>
+                    <h3 className="text-base font-bold text-white">Delivery Status & Error Code Details</h3>
                     <p className="text-xs text-slate-400 font-mono">Message ID: {selectedMessage.messageId}</p>
                   </div>
                 </div>
@@ -352,8 +366,8 @@ export default function WhatsAppDeliveryStatusPage() {
                   <span className="text-xs font-bold text-white">{selectedMessage.ticketNumber || 'N/A'}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">Current Status</span>
-                  <div className="mt-1">{getStatusBadge(selectedMessage.status)}</div>
+                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">Status</span>
+                  <div className="mt-1">{getStatusBadge(selectedMessage.status, selectedMessage.errorCode)}</div>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-semibold text-slate-400 block">Message Type</span>
@@ -364,6 +378,17 @@ export default function WhatsAppDeliveryStatusPage() {
                   <span className="text-xs font-semibold text-slate-200">{selectedMessage.vendorName || selectedMessage.phone}</span>
                 </div>
               </div>
+
+              {/* Meta Error Code Highlight Box if present */}
+              {selectedMessage.errorCode && (
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider">Meta WhatsApp Error Code: {selectedMessage.errorCode}</h4>
+                  </div>
+                  <p className="text-xs leading-relaxed text-rose-200">{selectedMessage.errorMessage || selectedMessage.reason}</p>
+                </div>
+              )}
 
               {/* Status Timeline History */}
               <div className="space-y-2">
@@ -387,17 +412,9 @@ export default function WhatsAppDeliveryStatusPage() {
                 </div>
               </div>
 
-              {/* BagAChat Request JSON */}
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Request Payload (JSON)</h4>
-                <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-40">
-                  {JSON.stringify(selectedMessage.requestPayload || {}, null, 2)}
-                </pre>
-              </div>
-
               {/* BagAChat API 2 Response JSON */}
               <div className="space-y-1.5">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">BagAChat API 2 Response (JSON)</h4>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">BagAChat API 2 Raw Response (JSON)</h4>
                 <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[11px] font-mono text-blue-400 overflow-x-auto max-h-40">
                   {JSON.stringify(selectedMessage.rawResponse || {}, null, 2)}
                 </pre>
