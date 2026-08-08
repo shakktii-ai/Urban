@@ -14,7 +14,8 @@ import {
   LogOut,
   Moon,
   Sun,
-  Bell
+  Bell,
+  CheckCheck
 } from 'lucide-react';
 
 export default function AppLayout({ children, title = 'Dashboard' }) {
@@ -78,6 +79,7 @@ export default function AppLayout({ children, title = 'Dashboard' }) {
     { name: 'Vendor Directory', href: '/dashboard/vendors', icon: Users },
     { name: 'Wards & Areas', href: '/dashboard/areas', icon: MapPin },
     { name: 'WhatsApp Feed', href: '/dashboard/whatsapp', icon: MessageSquare },
+    { name: 'Delivery Status (API 2)', href: '/dashboard/delivery-status', icon: CheckCheck },
     { name: 'BagAChat Templates', href: '/dashboard/templates', icon: FileCode },
     { name: 'Reports & Export', href: '/dashboard/reports', icon: FileSpreadsheet },
     { name: 'System Settings', href: '/dashboard/settings', icon: Settings },

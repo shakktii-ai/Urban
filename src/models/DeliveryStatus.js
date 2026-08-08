@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { DELIVERY_STATUS } = require('../config/constants');
 
 const DeliveryStatusSchema = new mongoose.Schema({
   messageId: {
@@ -8,20 +7,79 @@ const DeliveryStatusSchema = new mongoose.Schema({
     unique: true,
     index: true
   },
-  status: {
+  ticketId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ticket'
+  },
+  ticketNumber: {
     type: String,
-    enum: Object.values(DELIVERY_STATUS),
-    default: DELIVERY_STATUS.SENT,
+    default: '',
     index: true
+  },
+  vendorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vendor'
+  },
+  vendorName: {
+    type: String,
+    default: ''
+  },
+  citizenId: {
+    type: String,
+    default: ''
+  },
+  citizenName: {
+    type: String,
+    default: ''
   },
   phone: {
     type: String,
-    default: ''
+    default: '',
+    index: true
   },
-  errorCode: {
+  messageType: {
+    type: String,
+    enum: ['TEMPLATE', 'SESSION'],
+    default: 'TEMPLATE',
+    index: true
+  },
+  apiUsed: {
+    type: String,
+    default: 'API 1.1'
+  },
+  status: {
+    type: String,
+    enum: ['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'UNKNOWN'],
+    default: 'PENDING',
+    index: true
+  },
+  reason: {
     type: String,
     default: ''
-  }
+  },
+  retryCount: {
+    type: Number,
+    default: 0
+  },
+  retryTime: {
+    type: Date
+  },
+  checkedAt: {
+    type: Date
+  },
+  requestPayload: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  rawResponse: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  statusHistory: [{
+    status: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
+    remarks: { type: String, default: '' }
+  }]
 }, {
   timestamps: true,
   collection: 'deliveryStatus'

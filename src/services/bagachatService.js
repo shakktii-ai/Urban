@@ -5,7 +5,7 @@ const deliveryStatusRepository = require('../repositories/DeliveryStatusReposito
 
 class BagAChatService {
   /**
-   * Helper to format phone number to E.164 (+91XXXXXXXXXX)
+   * Helper to format phone number to clean E.164 digits without + prefix (91XXXXXXXXXX)
    * Automatically adds India country code 91 for 10-digit numbers
    */
   formatPhoneNumber(phone) {
@@ -14,7 +14,7 @@ class BagAChatService {
     if (digits.length === 10) {
       digits = `91${digits}`;
     }
-    return digits.startsWith('+') ? digits : `+${digits}`;
+    return digits;
   }
 
   /**
@@ -76,7 +76,7 @@ class BagAChatService {
   /**
    * API 1.1: Business Initiated Template Message
    */
-  async sendTemplateMessage(phone, templateName = 'state_vendor_alert1', paramsArray = [], defaultText = 'New Complaint', ticketNumber = '') {
+  async sendTemplateMessage(phone, templateName = 'state_vendor_alert1', paramsArray = [], defaultText = 'New Complaint', ticketNumber = '', metaData = {}) {
     const conversationname = this.formatPhoneNumber(phone);
 
     const payload = {
@@ -101,7 +101,7 @@ class BagAChatService {
       status = 'FAILED';
     }
 
-    // Record outbound message in repository
+    // Record outbound message in messages repository
     await messageRepository.create({
       direction: 'Outbound',
       phone: conversationname,
@@ -113,7 +113,22 @@ class BagAChatService {
       timestamp: new Date()
     });
 
-    await deliveryStatusRepository.updateDeliveryStatus(messageId, status, '', conversationname);
+    // Step 1: Save messageId in deliveryStatus repository with PENDING / SENT status
+    await deliveryStatusRepository.upsertStatusRecord({
+      messageId,
+      ticketId: metaData.ticketId || null,
+      ticketNumber: ticketNumber || metaData.ticketNumber || '',
+      vendorId: metaData.vendorId || null,
+      vendorName: metaData.vendorName || '',
+      citizenId: metaData.citizenId || '',
+      citizenName: metaData.citizenName || '',
+      phone: conversationname,
+      messageType: 'TEMPLATE',
+      apiUsed: 'API 1.1',
+      status: status === 'SENT' ? 'PENDING' : 'FAILED',
+      requestPayload: payload,
+      rawResponse: responseData
+    });
 
     return { success: status === 'SENT', messageId, data: responseData };
   }
@@ -121,7 +136,7 @@ class BagAChatService {
   /**
    * API 1.2: Customer Care Session Message (24-Hour Window)
    */
-  async sendSessionMessage(phone, messageText, ticketNumber = '') {
+  async sendSessionMessage(phone, messageText, ticketNumber = '', metaData = {}) {
     const conversationname = this.formatPhoneNumber(phone);
 
     const payload = {
@@ -142,7 +157,7 @@ class BagAChatService {
       status = 'FAILED';
     }
 
-    // Record outbound message in repository
+    // Record outbound message in messages repository
     await messageRepository.create({
       direction: 'Outbound',
       phone: conversationname,
@@ -153,7 +168,60 @@ class BagAChatService {
       timestamp: new Date()
     });
 
+    // Step 1: Save messageId in deliveryStatus repository with PENDING / SENT status
+    await deliveryStatusRepository.upsertStatusRecord({
+      messageId,
+      ticketId: metaData.ticketId || null,
+      ticketNumber: ticketNumber || metaData.ticketNumber || '',
+      vendorId: metaData.vendorId || null,
+      vendorName: metaData.vendorName || '',
+      citizenId: metaData.citizenId || '',
+      citizenName: metaData.citizenName || '',
+      phone: conversationname,
+      messageType: 'SESSION',
+      apiUsed: 'API 1.2',
+      status: status === 'SENT' ? 'PENDING' : 'FAILED',
+      requestPayload: payload,
+      rawResponse: responseData
+    });
+
     return { success: status === 'SENT', messageId, data: responseData };
+  }
+
+  /**
+   * STEP 2: BagAChat API 2 Delivery Status Check
+   * Template (API 1.1): POST https://push.bagachat.com/api/gettransactionalmsgstatus.bg
+   * Session (API 1.2):  POST https://link.bagachat.com/api/gettransactionalmsgstatus.bg
+   */
+  async getMessageStatus(messageId, messageType = 'TEMPLATE') {
+    const targetUrl = messageType === 'SESSION'
+      ? bagachatConfig.BAGACHAT_SESSION_STATUS_API
+      : bagachatConfig.BAGACHAT_TEMPLATE_STATUS_API;
+
+    const payload = { messageid: messageId };
+
+    console.log(`🔎 [BagAChat API 2 Status Check] MessageId: ${messageId}, Type: ${messageType}, URL: ${targetUrl}`);
+
+    try {
+      const responseData = await this.postWithAuthFallback(targetUrl, payload);
+      // Response format: { message: "Provided Message Status", messagestatus: "PENDING"|"DELIVERED"|"READ"|"FAILED", status: "SUCCESS" }
+      const messagestatus = responseData?.messagestatus || responseData?.status || 'UNKNOWN';
+
+      return {
+        success: true,
+        messageStatus: messagestatus.toUpperCase(),
+        reason: responseData?.message || '',
+        rawResponse: responseData
+      };
+    } catch (error) {
+      console.error(`❌ [BagAChat API 2 Error] MessageId (${messageId}):`, error.response?.data || error.message);
+      return {
+        success: false,
+        messageStatus: 'UNKNOWN',
+        reason: error.message,
+        rawResponse: error.response?.data || { error: error.message }
+      };
+    }
   }
 
   /**
